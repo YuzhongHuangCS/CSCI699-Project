@@ -57,6 +57,7 @@ import numpy
 from sklearn import metrics
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
+import pdb
 
 flags.DEFINE_integer('max_number_of_steps', 100,
                      'The maximum number of gradient steps.')
@@ -206,12 +207,26 @@ def GetParametrizedExpectation(references):
   convex_combination = []
 
   # vector q
-  mults = tf.Variable(numpy.ones(shape=(n), dtype='float32'))
+  #mults = tf.Variable(numpy.ones(shape=(n), dtype='float32'))
+  gamma_var =  tf.get_variable('lambda', shape=[], initializer=tf.ones_initializer())
+  gamma_sigmoid = tf.nn.sigmoid(gamma_var)
+  gamma_list = []
+  for i in range(n):
+    gamma_list.append(0.99 * (gamma_sigmoid ** i) + 0.01)
+
+  sum_gamma_list = tf.add_n(gamma_list)
+  gamma_list = [x / sum_gamma_list for x in sum_gamma_list]
+
+  mults = tf.get_variable('mults', shape=(n, ), initializer=tf.ones_initializer())
+  pdb.set_trace()
+
   # vector Q (output of softmax)
   normed = tf.squeeze(tf.nn.softmax(tf.expand_dims(mults, 0)), 0)
+  # normed = gamma_list
 
   references['mults'] = mults
   references['normed'] = normed
+  pdb.set_trace()
   transition_powers = GetPowerTransitionPairs(n)
   for k, (placeholder, transition_pow) in enumerate(transition_powers):
     feed_dict[placeholder] = transition_pow
