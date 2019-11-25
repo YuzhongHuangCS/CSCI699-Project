@@ -61,7 +61,7 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import pdb
 
-flags.DEFINE_integer('max_number_of_steps', 100,
+flags.DEFINE_integer('max_number_of_steps', 200,
                      'The maximum number of gradient steps.')
 flags.DEFINE_float('learning_rate', 0.2, 'PercentDelta learning rate.')
 flags.DEFINE_string(
@@ -94,7 +94,7 @@ flags.DEFINE_bool(
     'If set, left and right embedding dictionary will be shared.')
 
 flags.DEFINE_string('attention', 'single_vector',
-                    'Choices are "single_vector", "single_gamma')
+                    'Choices are "constant", "single_vector", "single_gamma", "mul_vector"')
 
 FLAGS = flags.FLAGS
 
@@ -210,7 +210,10 @@ def GetParametrizedExpectation(references):
   # transition_pow_n = transition
   convex_combination = []
 
-  if FLAGS.attention == 'single_vector':
+  if FLAGS.attention == 'constant':
+    mults = tf.constant(numpy.ones(shape=(n), dtype='float32'))
+    normed = tf.nn.softmax(mults)
+  elif FLAGS.attention == 'single_vector':
     mults = tf.get_variable('mults', shape=(n, ), initializer=tf.ones_initializer())
     normed = tf.nn.softmax(mults)
   elif FLAGS.attention == 'single_gamma':
@@ -222,8 +225,11 @@ def GetParametrizedExpectation(references):
 
     mults = tf.stack(mults)
     normed = mults / tf.reduce_mean(mults)
+  elif FLAGS.attention == 'mul_vector':
+    mults = tf.get_variable('mults', shape=(n, len(transition)), initializer=tf.ones_initializer())
+    normed = tf.nn.softmax(mults, axis=0)
   else:
-    print('Unexpected attetion mode')
+    print('Unexpected attention mode')
     pdb.set_trace()
 
   references['mults'] = mults
@@ -440,12 +446,13 @@ def main(argv=()):
                           train_neg_arr, i, v_total_loss, v_objective_loss,
                           eval_metrics, feed_dict)
 
+      '''
+      #Comment out to save memory
       if 'mults' in references:
-        mults, normed_mults = sess.run((references['mults'],
-                                        references['normed']))
-        eval_metrics['mults'].append(list(map(float, list(mults))))
-        eval_metrics['normed_mults'].append(
-            list(map(float, list(normed_mults))))
+        mults, normed_mults = sess.run((references['mults'], references['normed']))
+        eval_metrics['mults'].append(mults)
+        eval_metrics['normed_mults'].append(normed_mults)
+      '''
 
       if train_auc > best_train_auc:  # Found new best.
         best_train_auc = train_auc
