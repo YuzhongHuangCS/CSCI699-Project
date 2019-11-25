@@ -94,7 +94,7 @@ flags.DEFINE_bool(
     'If set, left and right embedding dictionary will be shared.')
 
 flags.DEFINE_string('attention', 'global_vector',
-                    'Choices are {constant, global_vector, global_exponential, personalized_vector, personalized_exponential, personalized_linear}')
+                    'Choices are {constant, global_vector, global_exponential, personalized_vector, personalized_exponential, personalized_linear, personalized_function}')
 
 FLAGS = flags.FLAGS
 
@@ -179,7 +179,7 @@ def IterPowerTransitionPairs(highest_power):
     placeholder = tf.placeholder(tf.float32, shape=(num_nodes, num_nodes))
     yield (placeholder, power_array)
 
-def GetParametrizedExpectation(references):
+def GetParametrizedExpectation(references, net_l, net_r):
   r"""Calculates E[D; q_1, q_2, ...]: a parametrized (tensor) matrix D.
 
   Which is defined as:
@@ -222,7 +222,6 @@ def GetParametrizedExpectation(references):
     mults = []
     for i in range(n):
       mults.append(0.99 * (gamma_sigmoid ** i) + 0.01)
-
     mults = tf.stack(mults)
     normed = mults / tf.reduce_sum(mults)
   elif FLAGS.attention == 'personalized_vector':
@@ -243,6 +242,10 @@ def GetParametrizedExpectation(references):
     for i in range(n):
       mults.append(gamma *i)
     mults = tf.stack(mults)
+    normed = tf.nn.softmax(mults, axis=0)
+  elif FLAGS.attention == 'personalized_function':
+    weight = tf.get_variable('weight', shape=(FLAGS.d, n))
+    mults = tf.transpose(tf.matmul(net_l, weight))
     normed = tf.nn.softmax(mults, axis=0)
   else:
     print('Unexpected attention mode')
@@ -397,7 +400,7 @@ def main(argv=()):
 
   g = CreateGFn(net_l, net_r)
 
-  target_matrix, feed_dict = GetParametrizedExpectation(references)
+  target_matrix, feed_dict = GetParametrizedExpectation(references, net_l, net_r)
   if not isinstance(target_matrix, tf.Tensor):
     target_matrix = tf.Variable(target_matrix, name='target', trainable=False)
 
