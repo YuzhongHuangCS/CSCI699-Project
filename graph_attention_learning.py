@@ -93,6 +93,9 @@ flags.DEFINE_bool(
     'share_embeddings', False,
     'If set, left and right embedding dictionary will be shared.')
 
+flags.DEFINE_string('attention', 'single_vector',
+                    'Choices are "single_vector", "single_gamma')
+
 FLAGS = flags.FLAGS
 
 NUM_NODES = 0
@@ -176,7 +179,6 @@ def IterPowerTransitionPairs(highest_power):
     placeholder = tf.placeholder(tf.float32, shape=(num_nodes, num_nodes))
     yield (placeholder, power_array)
 
-
 def GetParametrizedExpectation(references):
   r"""Calculates E[D; q_1, q_2, ...]: a parametrized (tensor) matrix D.
 
@@ -208,25 +210,21 @@ def GetParametrizedExpectation(references):
   # transition_pow_n = transition
   convex_combination = []
 
-  # vector q
-  '''
-  mults = tf.Variable(numpy.ones(shape=(n), dtype='float32'))
-  gamma_var =  tf.get_variable('lambda', shape=[], initializer=tf.ones_initializer())
-  gamma_sigmoid = tf.nn.sigmoid(gamma_var)
-  gamma_list = []
-  for i in range(n):
-    gamma_list.append(0.99 * (gamma_sigmoid ** i) + 0.01)
+  if FLAGS.attention == 'single_vector':
+    mults = tf.get_variable('mults', shape=(n, ), initializer=tf.ones_initializer())
+    normed = tf.nn.softmax(mults)
+  elif FLAGS.attention == 'single_gamma':
+    gamma = tf.get_variable('gamma', shape=[], initializer=tf.ones_initializer())
+    gamma_sigmoid = tf.nn.sigmoid(gamma)
+    mults = []
+    for i in range(n):
+      mults.append(0.99 * (gamma_sigmoid ** i) + 0.01)
 
-  sum_gamma_list = tf.add_n(gamma_list)
-  gamma_list = [x / sum_gamma_list for x in sum_gamma_list]
-  '''
-  #mults = tf.get_variable('mults', shape=(n, ), initializer=tf.ones_initializer())
-  #pdb.set_trace()
-
-  # vector Q (output of softmax)
-  mults = tf.Variable(numpy.ones(shape=(n), dtype='float32'))
-  normed = tf.squeeze(tf.nn.softmax(tf.expand_dims(mults, 0)), 0)
-  # normed = gamma_list
+    mults = tf.stack(mults)
+    normed = mults / tf.reduce_mean(mults)
+  else:
+    print('Unexpected attetion mode')
+    pdb.set_trace()
 
   references['mults'] = mults
   references['normed'] = normed
