@@ -47,6 +47,8 @@ context distributions.
 
 import json
 import os
+#os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
 import pickle
 
 from absl import app
@@ -72,15 +74,15 @@ flags.mark_flag_as_required('dataset_dir')
 flags.DEFINE_string('output_dir', None,
                     'If set, output metrics will be written.')
 
-flags.DEFINE_integer('d', 4, 'embedding dimensions')
+flags.DEFINE_integer('d', 64, 'embedding dimensions')
 
 flags.DEFINE_integer(
-    'transition_powers', 5,
+    'transition_powers', 10,
     'Highest power of normalized adjacency (transition) '
     'matrix.')
 
 flags.DEFINE_float(
-    'context_regularizer', 0.1,
+    'context_regularizer', 0.5,
     'Regularization co-efficient to the context distribution '
     'parameters.')
 
@@ -207,7 +209,8 @@ def GetParametrizedExpectation(references):
   convex_combination = []
 
   # vector q
-  #mults = tf.Variable(numpy.ones(shape=(n), dtype='float32'))
+  '''
+  mults = tf.Variable(numpy.ones(shape=(n), dtype='float32'))
   gamma_var =  tf.get_variable('lambda', shape=[], initializer=tf.ones_initializer())
   gamma_sigmoid = tf.nn.sigmoid(gamma_var)
   gamma_list = []
@@ -216,17 +219,18 @@ def GetParametrizedExpectation(references):
 
   sum_gamma_list = tf.add_n(gamma_list)
   gamma_list = [x / sum_gamma_list for x in sum_gamma_list]
-
-  mults = tf.get_variable('mults', shape=(n, ), initializer=tf.ones_initializer())
-  pdb.set_trace()
+  '''
+  #mults = tf.get_variable('mults', shape=(n, ), initializer=tf.ones_initializer())
+  #pdb.set_trace()
 
   # vector Q (output of softmax)
+  mults = tf.Variable(numpy.ones(shape=(n), dtype='float32'))
   normed = tf.squeeze(tf.nn.softmax(tf.expand_dims(mults, 0)), 0)
   # normed = gamma_list
 
   references['mults'] = mults
   references['normed'] = normed
-  pdb.set_trace()
+
   transition_powers = GetPowerTransitionPairs(n)
   for k, (placeholder, transition_pow) in enumerate(transition_powers):
     feed_dict[placeholder] = transition_pow
@@ -326,7 +330,6 @@ def RunEval(sess, g, test_pos_arr, test_neg_arr, train_pos_arr, train_neg_arr,
             i, v_total_loss, v_objective_loss, eval_metrics, feed_dict):
   """Calls sess.run(g) and computes AUC metric for test and train."""
   scores = sess.run(g, feed_dict=feed_dict)
-
   # Compute test auc:
   test_pos_prods = scores[test_pos_arr[:, 0], test_pos_arr[:, 1]]
   test_neg_prods = scores[test_neg_arr[:, 0], test_neg_arr[:, 1]]
@@ -355,7 +358,7 @@ def RunEval(sess, g, test_pos_arr, test_neg_arr, train_pos_arr, train_neg_arr,
     eval_metrics['test auc at best train'] = float(test_auc)
     eval_metrics['i at best train'] = i
 
-  return train_auc
+  return train_auc, test_auc
 
 
 def main(argv=()):
@@ -425,6 +428,7 @@ def main(argv=()):
       [tf.train.get_or_create_global_step()])
   best_train_values = None
   best_train_auc = 0
+  best_test_auc = 0
 
   for i in range(FLAGS.max_number_of_steps):
     # import pdb; pdb.set_trace()
@@ -434,9 +438,10 @@ def main(argv=()):
       references['update'](sess)
 
     if i % 4 == 0:  # Compute eval every 4th step.
-      train_auc = RunEval(sess, g, test_pos_arr, test_neg_arr, train_pos_arr,
+      train_auc, test_auc = RunEval(sess, g, test_pos_arr, test_neg_arr, train_pos_arr,
                           train_neg_arr, i, v_total_loss, v_objective_loss,
                           eval_metrics, feed_dict)
+
       if 'mults' in references:
         mults, normed_mults = sess.run((references['mults'],
                                         references['normed']))
@@ -446,6 +451,7 @@ def main(argv=()):
 
       if train_auc > best_train_auc:  # Found new best.
         best_train_auc = train_auc
+        best_test_auc = test_auc
 
         # Memorize variables.
         best_train_values = sess.run(all_variables)
@@ -470,6 +476,8 @@ def main(argv=()):
     pickle.dump(list(zip(names, last_train_values)), open(last_params, 'wb'))
     pickle.dump(list(zip(names, best_train_values)), open(best_params, 'wb'))
 
+  print('best_test_auc', best_test_auc)
+  pdb.set_trace()
   return 0
 
 
