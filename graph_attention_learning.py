@@ -94,7 +94,7 @@ flags.DEFINE_bool(
     'If set, left and right embedding dictionary will be shared.')
 
 flags.DEFINE_string('attention', 'global_vector',
-                    'Choices are "constant", "global_vector", "global_exponential", "personalized_vector"')
+                    'Choices are {constant, global_vector, global_exponential, personalized_vector, personalized_exponential, personalized_linear}')
 
 FLAGS = flags.FLAGS
 
@@ -236,6 +236,14 @@ def GetParametrizedExpectation(references):
       mults.append(0.99 * (gamma_sigmoid ** i) + 0.01)
     mults = tf.stack(mults)
     normed = mults / tf.reduce_sum(mults, axis=0)
+  elif FLAGS.attention == 'personalized_linear':
+    gamma = tf.get_variable('gamma', shape=(len(transition), ), initializer=tf.ones_initializer())
+    gamma *= -1
+    mults = []
+    for i in range(n):
+      mults.append(gamma *i)
+    mults = tf.stack(mults)
+    normed = tf.nn.softmax(mults, axis=0)
   else:
     print('Unexpected attention mode')
     pdb.set_trace()
