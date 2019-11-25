@@ -93,8 +93,8 @@ flags.DEFINE_bool(
     'share_embeddings', False,
     'If set, left and right embedding dictionary will be shared.')
 
-flags.DEFINE_string('attention', 'single_vector',
-                    'Choices are "constant", "single_vector", "single_gamma", "mul_vector"')
+flags.DEFINE_string('attention', 'global_vector',
+                    'Choices are "constant", "global_vector", "global_exponential", "personalized_vector"')
 
 FLAGS = flags.FLAGS
 
@@ -211,12 +211,12 @@ def GetParametrizedExpectation(references):
   convex_combination = []
 
   if FLAGS.attention == 'constant':
-    mults = tf.constant(numpy.ones(shape=(n), dtype='float32'))
+    mults = tf.constant(numpy.ones(shape=(n, ), dtype='float32'))
     normed = tf.nn.softmax(mults)
-  elif FLAGS.attention == 'single_vector':
+  elif FLAGS.attention == 'global_vector':
     mults = tf.get_variable('mults', shape=(n, ), initializer=tf.ones_initializer())
     normed = tf.nn.softmax(mults)
-  elif FLAGS.attention == 'single_gamma':
+  elif FLAGS.attention == 'global_exponential':
     gamma = tf.get_variable('gamma', shape=[], initializer=tf.ones_initializer())
     gamma_sigmoid = tf.nn.sigmoid(gamma)
     mults = []
@@ -224,10 +224,18 @@ def GetParametrizedExpectation(references):
       mults.append(0.99 * (gamma_sigmoid ** i) + 0.01)
 
     mults = tf.stack(mults)
-    normed = mults / tf.reduce_mean(mults)
-  elif FLAGS.attention == 'mul_vector':
+    normed = mults / tf.reduce_sum(mults)
+  elif FLAGS.attention == 'personalized_vector':
     mults = tf.get_variable('mults', shape=(n, len(transition)), initializer=tf.ones_initializer())
     normed = tf.nn.softmax(mults, axis=0)
+  elif FLAGS.attention == 'personalized_exponential':
+    gamma = tf.get_variable('gamma', shape=(len(transition), ), initializer=tf.ones_initializer())
+    gamma_sigmoid = tf.nn.sigmoid(gamma)
+    mults = []
+    for i in range(n):
+      mults.append(0.99 * (gamma_sigmoid ** i) + 0.01)
+    mults = tf.stack(mults)
+    normed = mults / tf.reduce_sum(mults, axis=0)
   else:
     print('Unexpected attention mode')
     pdb.set_trace()
