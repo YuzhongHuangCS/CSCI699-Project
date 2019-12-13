@@ -47,7 +47,7 @@ context distributions.
 
 import json
 import os
-#os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 import pickle
 
@@ -61,7 +61,7 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import pdb
 
-flags.DEFINE_integer('max_number_of_steps', 200,
+flags.DEFINE_integer('max_number_of_steps', 1000,
                      'The maximum number of gradient steps.')
 flags.DEFINE_float('learning_rate', 0.2, 'PercentDelta learning rate.')
 flags.DEFINE_string(
@@ -127,10 +127,12 @@ def Description():
 
 def GetOrMakeAdjacencyMatrix():
   """Creates Adjacency matrix and caches it on disk with name a.npy."""
+  '''
   a_file = os.path.join(FLAGS.dataset_dir, 'a.npy')
+
   if os.path.exists(a_file):
     return numpy.load(open(a_file, 'rb'))
-
+  '''
   num_nodes = GetNumNodes()
   a = numpy.zeros(shape=(num_nodes, num_nodes), dtype='float32')
   train_edges = numpy.load(
@@ -139,7 +141,7 @@ def GetOrMakeAdjacencyMatrix():
   if not IsDirected():
     a[train_edges[:, 1], train_edges[:, 0]] = 1.0
 
-  numpy.save(open(a_file, 'wb'), a)
+  #numpy.save(open(a_file, 'wb'), a)
   return a
 
 
@@ -167,14 +169,11 @@ def IterPowerTransitionPairs(highest_power):
       transition /= degree + 0.0000001
       power_array = transition
     else:
-      power_filename = os.path.join(FLAGS.dataset_dir, 't_%i.npy' % (i + 1))
-      if os.path.exists(power_filename):
-        power_array = numpy.load(open(power_filename, 'rb'))
-      else:
-        power_array = power_array.dot(transition)
-        print('Computing T^%i  ...' % (i + 1))  # pylint: disable=superfluous-parens
-        numpy.save(open(power_filename, 'wb'), power_array)
-        print(' ... Saved T^%i' % (i + 1))  # pylint: disable=superfluous-parens
+      #power_filename = os.path.join(FLAGS.dataset_dir, 't_%i.npy' % (i + 1))
+      power_array = power_array.dot(transition)
+      print('Computing T^%i  ...' % (i + 1))  # pylint: disable=superfluous-parens
+      #numpy.save(open(power_filename, 'wb'), power_array)
+      print(' ... Saved T^%i' % (i + 1))  # pylint: disable=superfluous-parens
 
     placeholder = tf.placeholder(tf.float32, shape=(num_nodes, num_nodes))
     yield (placeholder, power_array)
@@ -322,9 +321,9 @@ def CreateObjective(g, target_matrix):
     true_adjacency = tf.Variable(
         GetOrMakeAdjacencyMatrix(), name='adjacency', trainable=False)
     logistic = tf.sigmoid(g)
-    return -tf.reduce_mean(
+    return -tf.reduce_mean(tf.abs(
         tf.multiply(target_matrix, tf.log(PlusEpsilon(logistic))) +
-        tf.multiply(1 - true_adjacency, tf.log(PlusEpsilon(1 - logistic))))
+        tf.multiply(1 - true_adjacency, tf.log(PlusEpsilon(1 - logistic)))))
   elif FLAGS.objective == 'rmse':  # Root mean squared error
     return tf.reduce_mean((g - target_matrix)**2)
   else:
@@ -408,12 +407,14 @@ def main(argv=()):
   tf.losses.add_loss(objective_loss)
   loss = tf.losses.get_total_loss()
 
-  optimizer = tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
+  optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate)
+  train_op = optimizer.minimize(loss)
+  '''
   # Set up training.
   grad_mults = CreateGradMultipliers(loss)
   train_op = slim.learning.create_train_op(
       loss, optimizer, gradient_multipliers=grad_mults)
-
+  '''
   if IsDirected():
     test_neg_file = os.path.join(FLAGS.dataset_dir, 'test.directed.neg.txt.npy')
     test_neg_arr = numpy.load(open(test_neg_file, 'rb'))
@@ -447,19 +448,22 @@ def main(argv=()):
   }
   # IPython.embed()
 
-  all_variables = tf.trainable_variables() + (
+  '''all_variables = tf.trainable_variables() + (
       [tf.train.get_or_create_global_step()])
+  '''
+  all_variables = tf.trainable_variables()
   best_train_values = None
   best_train_auc = 0
   best_test_auc = 0
 
+  print('IsDirected', IsDirected())
   for i in range(FLAGS.max_number_of_steps):
     # import pdb; pdb.set_trace()
     _, v_total_loss, v_objective_loss = sess.run(
         (train_op, loss, objective_loss), feed_dict=feed_dict)
     if 'update' in references:
       references['update'](sess)
-
+    #pdb.set_trace()
     if i % 4 == 0:  # Compute eval every 4th step.
       train_auc, test_auc = RunEval(sess, g, test_pos_arr, test_neg_arr, train_pos_arr,
                           train_neg_arr, i, v_total_loss, v_objective_loss,
